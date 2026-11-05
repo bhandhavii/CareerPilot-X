@@ -6,6 +6,8 @@ export interface IUser extends Document {
   email: string;
   passwordHash: string;
   avatarUrl?: string;
+  authProvider?: 'local' | 'google';
+  googleId?: string;
   track: 'frontend' | 'backend' | 'fullstack';
   experienceLevel: 'beginner' | 'intermediate' | 'advanced';
   weeklyCommitmentHours: number;
@@ -28,8 +30,14 @@ const UserSchema = new Schema<IUser>(
   {
     name: { type: String, required: true, trim: true },
     email: { type: String, required: true, unique: true, lowercase: true, trim: true },
-    passwordHash: { type: String, required: true },
+    passwordHash: { type: String, default: '' },
     avatarUrl: { type: String, default: '' },
+    authProvider: {
+      type: String,
+      enum: ['local', 'google'],
+      default: 'local',
+    },
+    googleId: { type: String, default: undefined },
     track: {
       type: String,
       enum: ['frontend', 'backend', 'fullstack'],

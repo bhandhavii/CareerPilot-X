@@ -22,6 +22,8 @@ export interface StoredUser {
   email: string;
   passwordHash: string;
   avatarUrl?: string;
+  authProvider?: 'local' | 'google';
+  googleId?: string;
   track: 'frontend' | 'backend' | 'fullstack';
   experienceLevel: 'beginner' | 'intermediate' | 'advanced';
   weeklyCommitmentHours: number;
@@ -220,14 +222,28 @@ class ResilientStore {
     return found || null;
   }
 
+  public async findUserByGoogleId(googleId: string): Promise<StoredUser | null> {
+    if (!googleId) return null;
+    if (this.isMongoConnected()) {
+      try {
+        const doc = await UserModel.findOne({ googleId });
+        if (doc) return this.docToStoredUser(doc);
+      } catch (e) {
+        console.warn('[Storage] Mongo query by googleId failed, falling back to local store:', e);
+      }
+    }
+    const found = this.memoryStore.users.find((u) => u.googleId === googleId);
+    return found || null;
+  }
+
   public async createUser(userData: {
     name: string;
     email: string;
-    passwordHash: string;
+    passwordHash?: string;
     avatarUrl?: string;
     authProvider?: 'local' | 'google';
     googleId?: string;
-      }): Promise<StoredUser> {
+  }): Promise<StoredUser> {
     const normalized = userData.email.trim().toLowerCase();
 
     if (this.isMongoConnected()) {
@@ -235,7 +251,7 @@ class ResilientStore {
         const created = await UserModel.create({
           name: userData.name.trim(),
           email: normalized,
-          passwordHash: userData.passwordHash,
+          passwordHash: userData.passwordHash || '',
           avatarUrl: userData.avatarUrl || '',
           authProvider: userData.authProvider || 'local',
           googleId: userData.googleId,
@@ -266,7 +282,7 @@ class ResilientStore {
       id: `usr_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
       name: userData.name.trim(),
       email: normalized,
-      passwordHash: userData.passwordHash,
+      passwordHash: userData.passwordHash || '',
       avatarUrl: userData.avatarUrl || '',
       authProvider: userData.authProvider || 'local',
       googleId: userData.googleId,
@@ -758,7 +774,7 @@ class ResilientStore {
       id: String(doc._id),
       name: doc.name,
       email: doc.email,
-      passwordHash: doc.passwordHash,
+      passwordHash: doc.passwordHash || '',
       avatarUrl: doc.avatarUrl || '',
       authProvider: doc.authProvider || 'local',
       googleId: doc.googleId,

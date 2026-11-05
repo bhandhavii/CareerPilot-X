@@ -68,6 +68,8 @@ function toPublicUser(user: StoredUser) {
     name: user.name,
     email: user.email,
     avatarUrl: user.avatarUrl || '',
+    authProvider: user.authProvider || 'local',
+    googleId: user.googleId,
     track: user.track || 'fullstack',
     experienceLevel: user.experienceLevel || 'beginner',
     weeklyCommitmentHours: user.weeklyCommitmentHours || 0,
@@ -161,6 +163,52 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
 
     const token = jwt.sign({ id: user.id, email: user.email }, JWT_SECRET, { expiresIn: '7d' });
     return res.json({ token, user: toPublicUser(user) });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return res.status(500).json({ error: msg });
+  }
+});
+
+app.post('/api/auth/google', async (req: Request, res: Response) => {
+  try {
+    const { email, name, googleId, avatarUrl } = req.body;
+    if (!email || !googleId) {
+      return res.status(400).json({ error: 'Email and Google ID are required.' });
+    }
+
+    const normalizedEmail = String(email).trim().toLowerCase();
+    let user = await dbStore.findUserByGoogleId(googleId);
+
+    if (!user) {
+      user = await dbStore.findUserByEmail(normalizedEmail);
+      if (user) {
+        user = await dbStore.updateUser(user.id, {
+          googleId,
+          authProvider: 'google',
+          avatarUrl: user.avatarUrl || avatarUrl || '',
+        });
+      } else {
+        user = await dbStore.createUser({
+          name: name ? String(name).trim() : normalizedEmail.split('@')[0],
+          email: normalizedEmail,
+          passwordHash: '',
+          avatarUrl: avatarUrl || '',
+          authProvider: 'google',
+          googleId,
+        });
+      }
+    }
+
+    if (!user) {
+      return res.status(500).json({ error: 'Failed to process Google authentication.' });
+    }
+
+    const token = jwt.sign({ id: user.id, email: user.email }, JWT_SECRET, { expiresIn: '7d' });
+    return res.json({
+      token,
+      user: toPublicUser(user),
+      message: 'Signed in with Google successfully.',
+    });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     return res.status(500).json({ error: msg });
@@ -277,6 +325,9 @@ app.post('/api/profile/change-password', authenticateToken, async (req: AuthRequ
     }
     const user = await dbStore.findUserById(req.userId || '');
     if (!user) return res.status(404).json({ error: 'User not found' });
+    if (!user.passwordHash) {
+      return res.status(400).json({ error: 'Password change is not available for accounts authenticated via Google.' });
+    }
 
     const matches = await bcrypt.compare(currentPassword, user.passwordHash);
     if (!matches) {
